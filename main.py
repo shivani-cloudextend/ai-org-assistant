@@ -112,10 +112,10 @@ async def startup_event():
         )
         
         if use_aws_bedrock:
-            logger.info(f"✅ Vector store initialized with AWS Bedrock embeddings (region: {aws_region})")
+            logger.info(f"Vector store initialized with AWS Bedrock embeddings (region: {aws_region})")
         else:
-            logger.info("✅ Vector store initialized with local embeddings")
-        logger.info("✅ Document processor initialized")
+            logger.info("Vector store initialized with local embeddings")
+        logger.info("Document processor initialized")
         
         # Initialize AI engine only if OpenAI API key is provided
         if openai_api_key:
@@ -125,10 +125,10 @@ async def startup_event():
                 document_processor=document_processor,
                 model=os.getenv("OPENAI_MODEL", "gpt-4-turbo-preview")
             )
-            logger.info("✅ AI Engine initialized with OpenAI")
+            logger.info("AI Engine initialized with OpenAI")
         else:
             ai_engine = None
-            logger.warning("⚠️  OpenAI API key not set - AI query endpoint will not work")
+            logger.warning("OpenAI API key not set - AI query endpoint will not work")
             logger.warning("   Data collection and storage will still work")
         
         logger.info("AI Organization Assistant started successfully")
@@ -390,12 +390,12 @@ async def run_data_sync(sources: List[str], repositories: Optional[List[str]], s
             
             # DEBUG: Show what was collected
             print(f"\n{'='*80}")
-            print(f"📊 COLLECTION SUMMARY")
+            print(f"COLLECTION SUMMARY")
             print(f"{'='*80}")
-            print(f"✅ Total documents collected: {len(all_documents)}")
+            print(f"Total documents collected: {len(all_documents)}")
             
             # Show sample documents
-            print(f"\n📄 Sample Documents (first 5):")
+            print(f"\nSample Documents (first 5):")
             print(f"{'-'*80}")
             for i, doc in enumerate(all_documents[:5]):
                 print(f"\n{i+1}. Source: {doc.source}")
@@ -411,19 +411,19 @@ async def run_data_sync(sources: List[str], repositories: Optional[List[str]], s
             for doc in all_documents:
                 doc_types[doc.doc_type] = doc_types.get(doc.doc_type, 0) + 1
             
-            print(f"\n📋 Document types:")
+            print(f"\nDocument types:")
             for doc_type, count in sorted(doc_types.items(), key=lambda x: x[1], reverse=True):
                 print(f"   {doc_type}: {count} documents")
             print(f"{'='*80}\n")
             
             # Process and store with AWS Bedrock embeddings (or local if disabled)
             print(f"\n{'='*80}")
-            print(f"🚀 PROCESSING DOCUMENTS WITH EMBEDDINGS")
+            print(f"PROCESSING DOCUMENTS WITH EMBEDDINGS")
             print(f"{'='*80}")
             result = await pipeline.process_and_store_documents(all_documents)
             
             print(f"\n{'='*80}")
-            print(f"✅ PROCESSING COMPLETE!")
+            print(f"PROCESSING COMPLETE!")
             print(f"{'='*80}")
             print(f"   Processed: {result['processed_documents']} documents")
             print(f"   Total chunks: {result['total_chunks']}")

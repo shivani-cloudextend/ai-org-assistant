@@ -71,11 +71,11 @@ class DocumentProcessor:
             )
             self.bedrock_model_id = "amazon.titan-embed-text-v1"
             self.embedder = None  # Not using local embedder
-            print(f"🌐 Initialized AWS Bedrock embeddings in region {aws_region}")
+            print(f"Initialized AWS Bedrock embeddings in region {aws_region}")
         else:
             self.embedder = SentenceTransformer(embedding_model)
             self.bedrock_runtime = None
-            print(f"💻 Initialized local embeddings with {embedding_model}")
+            print(f"Initialized local embeddings with {embedding_model}")
         
         # Initialize text splitters for different content types
         self.text_splitters = {
@@ -130,9 +130,9 @@ class DocumentProcessor:
                 return []
             
             # Generate embeddings for all chunks
-            print(f"🔄 Generating embeddings for {len(chunks)} chunks from {doc_id}")
+            print(f"Generating embeddings for {len(chunks)} chunks from {doc_id}")
             embeddings = await self._generate_embeddings(chunks)
-            print(f"✅ Generated {len(embeddings)} embeddings")
+            print(f"Generated {len(embeddings)} embeddings")
             
             # Create processed chunks
             processed_chunks = []
@@ -192,10 +192,10 @@ class DocumentProcessor:
     async def _generate_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings using either AWS Bedrock or local model"""
         if self.use_aws_bedrock:
-            print(f"🌐 Using AWS Bedrock to generate {len(texts)} embeddings")
+            print(f"Using AWS Bedrock to generate {len(texts)} embeddings")
             return await self._generate_bedrock_embeddings(texts)
         else:
-            print(f"💻 Using local model to generate {len(texts)} embeddings")
+            print(f"Using local model to generate {len(texts)} embeddings")
             return self._generate_local_embeddings(texts)
     
     def _generate_local_embeddings(self, texts: List[str]) -> List[List[float]]:
@@ -206,7 +206,7 @@ class DocumentProcessor:
     async def _generate_bedrock_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings using AWS Bedrock"""
         embeddings = []
-        print(f"📡 Calling AWS Bedrock API for {len(texts)} texts...")
+        print(f"Calling AWS Bedrock API for {len(texts)} texts...")
         
         for idx, text in enumerate(texts):
             try:
@@ -230,18 +230,18 @@ class DocumentProcessor:
                 embeddings.append(embedding)
                 
                 if (idx + 1) % 10 == 0 or (idx + 1) == len(texts):
-                    msg = f"   ✓ Processed {idx+1}/{len(texts)} embeddings via Bedrock"
+                    msg = f"   Processed {idx+1}/{len(texts)} embeddings via Bedrock"
                     logger.info(msg)
                     print(msg)
                 
             except Exception as e:
-                error_msg = f"❌ Error generating Bedrock embedding for text {idx+1}: {e}"
+                error_msg = f"Error generating Bedrock embedding for text {idx+1}: {e}"
                 logger.error(error_msg)
                 print(error_msg)
                 # Return a zero vector as fallback
                 embeddings.append([0.0] * 1536)  # Titan embed dimension
         
-        print(f"✅ Completed {len(embeddings)} Bedrock embeddings")
+        print(f"Completed {len(embeddings)} Bedrock embeddings")
         return embeddings
     
     async def generate_embedding(self, text: str) -> List[float]:
