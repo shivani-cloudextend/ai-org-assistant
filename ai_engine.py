@@ -10,10 +10,19 @@ from dataclasses import dataclass
 from enum import Enum
 import json
 from datetime import datetime
+import os
 
 # Third-party imports
-from openai import AsyncOpenAI
 from sentence_transformers import SentenceTransformer
+
+# AWS imports
+try:
+    import boto3
+    import botocore
+    AWS_AVAILABLE = True
+except ImportError:
+    AWS_AVAILABLE = False
+    logger.warning("boto3 not available, AWS Bedrock won't work")
 
 from document_processor import VectorStore, DocumentProcessor
 
@@ -224,19 +233,24 @@ class AIEngine:
     """Main AI engine for processing queries and generating responses"""
     
     def __init__(self, 
-                 openai_api_key: str,
                  vector_store: VectorStore,
                  document_processor: DocumentProcessor,
-                 model: str = "gpt-4-turbo-preview"):
+                 aws_region: str = "us-east-1",
+                 model: str = "anthropic.claude-3-haiku-20240307-v1:0"):
         
-        self.client = AsyncOpenAI(api_key=openai_api_key)
+        # Use AWS Bedrock instead of OpenAI
+        self.bedrock_runtime = boto3.client(
+            service_name='bedrock-runtime',
+            region_name=aws_region
+        )
         self.vector_store = vector_store
         self.document_processor = document_processor
         self.model = model
+        self.aws_region = aws_region
         self.prompt_builder = RoleBasedPromptBuilder()
         self.embedder = SentenceTransformer('BAAI/bge-large-en-v1.5')
         
-        logger.info(f"AI Engine initialized with model: {model}")
+        logger.info(f"AI Engine initialized with AWS Bedrock model: {model} in region {aws_region}")
 
     async def process_query(self, query_context: QueryContext) -> AIResponse:
         """Process a user query and generate role-based response"""
@@ -354,21 +368,57 @@ class AIEngine:
         return results
 
     async def _generate_response(self, prompt: str) -> str:
-        """Generate response using OpenAI API"""
+        """Generate response using AWS Bedrock API"""
         
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,  # Lower temperature for more consistent responses
-                max_tokens=2000,
-                top_p=0.9
+            # Prepare request body based on model type
+            if "anthropic.claude" in self.model:
+                # Claude format
+                request_body = {
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 2000,
+                    "temperature": 0.1,
+                    "top_p": 0.9,
+                    "messages": [{"role": "user", "content": prompt}]
+                }
+            elif "amazon.titan" in self.model:
+                # Titan format
+                request_body = {
+                    "inputText": prompt,
+                    "textGenerationConfig": {
+                        "maxTokenCount": 2000,
+                        "temperature": 0.1,
+                        "topP": 0.9
+                    }
+                }
+            else:
+                raise ValueError(f"Unsupported model: {self.model}")
+            
+            # Call Bedrock API (synchronous, so wrap in async)
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.bedrock_runtime.invoke_model(
+                    modelId=self.model,
+                    body=json.dumps(request_body)
+                )
             )
             
-            return response.choices[0].message.content.strip()
+            # Parse response
+            response_body = json.loads(response['body'].read())
+            
+            # Extract text based on model type
+            if "anthropic.claude" in self.model:
+                if 'content' in response_body and len(response_body['content']) > 0:
+                    return response_body['content'][0]['text'].strip()
+            elif "amazon.titan" in self.model:
+                if 'results' in response_body and len(response_body['results']) > 0:
+                    return response_body['results'][0]['outputText'].strip()
+            
+            raise ValueError("Unexpected response format from Bedrock")
             
         except Exception as e:
-            logger.error(f"Error generating AI response: {e}")
+            logger.error(f"Error generating AI response from Bedrock: {e}")
             raise
 
     def _calculate_confidence(self, retrieved_docs: List[Dict], query: str) -> float:
@@ -388,11 +438,27 @@ class AIEngine:
         # Penalty for few documents
         document_factor = min(len(retrieved_docs) / 5, 1.0)
         
-        # Bonus for recent documents
-        recent_docs = sum(1 for doc in retrieved_docs 
-                         if doc.get('metadata', {}).get('updated_at') 
-                         and (datetime.now() - datetime.fromisoformat(doc['metadata']['updated_at'].replace('Z', '+00:00'))).days < 30)
-        recency_factor = 1.0 + (recent_docs / len(retrieved_docs)) * 0.1
+        # Bonus for recent documents (skip if date parsing fails)
+        recent_docs = 0
+        try:
+            for doc in retrieved_docs:
+                updated_at = doc.get('metadata', {}).get('updated_at')
+                if updated_at:
+                    try:
+                        doc_date = datetime.fromisoformat(updated_at.replace('Z', '+00:00'))
+                        if doc_date.tzinfo:
+                            # Make datetime.now() timezone-aware for comparison
+                            from datetime import timezone
+                            now = datetime.now(timezone.utc)
+                        else:
+                            now = datetime.now()
+                        if (now - doc_date).days < 30:
+                            recent_docs += 1
+                    except:
+                        pass  # Skip problematic dates
+        except:
+            pass
+        recency_factor = 1.0 + (recent_docs / len(retrieved_docs)) * 0.1 if len(retrieved_docs) > 0 else 1.0
         
         confidence = avg_similarity * document_factor * recency_factor
         return min(confidence, 1.0)

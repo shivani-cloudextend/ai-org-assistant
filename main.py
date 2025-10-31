@@ -117,19 +117,14 @@ async def startup_event():
             logger.info("Vector store initialized with local embeddings")
         logger.info("Document processor initialized")
         
-        # Initialize AI engine only if OpenAI API key is provided
-        if openai_api_key:
-            ai_engine = AIEngine(
-                openai_api_key=openai_api_key,
-                vector_store=vector_store,
-                document_processor=document_processor,
-                model=os.getenv("OPENAI_MODEL", "gpt-4-turbo-preview")
-            )
-            logger.info("AI Engine initialized with OpenAI")
-        else:
-            ai_engine = None
-            logger.warning("OpenAI API key not set - AI query endpoint will not work")
-            logger.warning("   Data collection and storage will still work")
+        # Initialize AI engine with AWS Bedrock
+        ai_engine = AIEngine(
+            vector_store=vector_store,
+            document_processor=document_processor,
+            aws_region=aws_region,
+            model=os.getenv("BEDROCK_MODEL", "amazon.titan-text-express-v1")
+        )
+        logger.info("AI Engine initialized with AWS Bedrock")
         
         logger.info("AI Organization Assistant started successfully")
         

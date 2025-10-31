@@ -83,6 +83,67 @@ The API will be available at `http://localhost:8000`
 
 After starting the application, sync your data sources:
 
+#### **Basic Sync (All Sources)**
+```bash
+curl -X POST "http://localhost:8000/sync" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sources": ["github", "confluence"]
+  }'
+```
+
+#### **GitHub Only - Specific Repositories**
+```bash
+curl -X POST "http://localhost:8000/sync" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sources": ["github"],
+    "repositories": ["suiteapps", "backend_services"]
+  }'
+```
+
+#### **Confluence Only - Specific Spaces**
+```bash
+curl -X POST "http://localhost:8000/sync" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sources": ["confluence"],
+    "spaces": ["CEOL", "TECH", "SUPPORT"]
+  }'
+```
+
+#### **GitHub with Folder Filtering (Global)**
+```bash
+curl -X POST "http://localhost:8000/sync" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sources": ["github"],
+    "repositories": ["main-app"],
+    "include_paths": ["src/", "lib/"],
+    "exclude_paths": ["tests/", "docs/"]
+  }'
+```
+
+#### **GitHub with Per-Repository Filtering**
+```bash
+curl -X POST "http://localhost:8000/sync" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sources": ["github"],
+    "repositories": ["main-app", "auth-service"],
+    "repo_configs": {
+      "main-app": {
+        "include_paths": ["src/", "config/"],
+        "exclude_paths": ["tests/"]
+      },
+      "auth-service": {
+        "include_paths": ["core/", "api/"]
+      }
+    }
+  }'
+```
+
+#### **Combined GitHub + Confluence Sync**
 ```bash
 curl -X POST "http://localhost:8000/sync" \
   -H "Content-Type: application/json" \
@@ -99,7 +160,7 @@ curl -X POST "http://localhost:8000/sync" \
 curl -X POST "http://localhost:8000/query" \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "How do I deploy the authentication service?",
+    "query": "How do I deploy the authentication service?",
     "user_role": "developer",
     "additional_context": "production environment"
   }'
@@ -111,22 +172,43 @@ curl -X POST "http://localhost:8000/query" \
 curl -X POST "http://localhost:8000/query" \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "User getting authentication errors, how to troubleshoot?",
+    "query": "User getting authentication errors, how to troubleshoot?",
     "user_role": "support",
     "additional_context": "customer reported issue"
   }'
 ```
 
-### 4. Check System Status
+### 4. Query with Source Filtering
+
+```bash
+curl -X POST "http://localhost:8000/query" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "How are files uploaded to OneDrive and why might it fail?",
+    "user_role": "developer",
+    "filters": {
+      "source": "github",
+      "repository": "backend_services"
+    }
+  }'
+```
+
+### 5. Check System Status
 
 ```bash
 curl http://localhost:8000/health
 ```
 
-### 5. View Collection Statistics
+### 6. View Collection Statistics
 
 ```bash
 curl http://localhost:8000/collections/stats
+```
+
+### 7. Check Sync Status
+
+```bash
+curl http://localhost:8000/sync/status
 ```
 
 ## API Documentation

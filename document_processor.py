@@ -15,7 +15,7 @@ import os
 # Third-party imports
 import chromadb
 from sentence_transformers import SentenceTransformer
-from langchain_text_splitters import RecursiveCharacterTextSplitter, Language
+from langchain.text_splitter import RecursiveCharacterTextSplitter, Language
 from langchain_core.documents import Document as LangchainDocument
 import tiktoken
 
@@ -450,6 +450,22 @@ class VectorStore:
         
         logger.info(f"Vector store initialized with {len(self.collections)} collections")
     
+    def _sanitize_metadata_for_chromadb(self, metadata: Dict) -> Dict:
+        """Convert metadata to ChromaDB-compatible format (no lists, only primitives)"""
+        sanitized = {}
+        for key, value in metadata.items():
+            if isinstance(value, list):
+                # Convert lists to comma-separated strings
+                sanitized[key] = ', '.join(str(v) for v in value) if value else ''
+            elif isinstance(value, (str, int, float, bool)):
+                sanitized[key] = value
+            elif value is None:
+                sanitized[key] = ''
+            else:
+                # Convert other types to string
+                sanitized[key] = str(value)
+        return sanitized
+    
     async def store_chunks(self, processed_chunks: List[ProcessedChunk]) -> None:
         """Store processed chunks in appropriate collections"""
         
@@ -471,6 +487,9 @@ class VectorStore:
             if not target_collections:
                 target_collections = ['general']
             
+            # Sanitize metadata for ChromaDB (convert lists to strings)
+            sanitized_metadata = self._sanitize_metadata_for_chromadb(chunk.metadata)
+            
             # Store in each relevant collection
             for collection_name in target_collections:
                 try:
@@ -478,7 +497,7 @@ class VectorStore:
                         ids=[chunk.id],
                         embeddings=[chunk.embedding],
                         documents=[chunk.content],
-                        metadatas=[chunk.metadata]
+                        metadatas=[sanitized_metadata]
                     )
                     
                     logger.debug(f"Stored chunk {chunk.id} in collection {collection_name}")
@@ -568,6 +587,7 @@ class DocumentPipeline:
                 if chunks:
                     # Store chunks in vector database
                     await self.vector_store.store_chunks(chunks)
+                    print(f"✅ Generated {len(chunks)} chunks with embeddings and stored in vector DB")
                     total_chunks += len(chunks)
                     processed_documents += 1
                 else:
