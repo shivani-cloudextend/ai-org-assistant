@@ -99,23 +99,36 @@ async def startup_event():
     try:
         # Load configuration from environment
         openai_api_key = os.getenv("OPENAI_API_KEY")
+        use_aws_bedrock = os.getenv("USE_AWS_BEDROCK", "false").lower() == "true"
+        aws_region = os.getenv("AWS_REGION", "us-east-1")
         
         # Initialize components (vector store and processor always needed)
         vector_store = VectorStore(persist_directory=os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db"))
-        document_processor = DocumentProcessor()
-        logger.info("✅ Vector store and document processor initialized")
+        
+        # Initialize DocumentProcessor with AWS Bedrock or local embeddings
+        document_processor = DocumentProcessor(
+            use_aws_bedrock=use_aws_bedrock,
+            aws_region=aws_region
+        )
+        
+        if use_aws_bedrock:
+            logger.info(f"Vector store initialized with AWS Bedrock embeddings (region: {aws_region})")
+        else:
+            logger.info("Vector store initialized with local embeddings")
+        logger.info("Document processor initialized")
         
         # Initialize AI engine only if OpenAI API key is provided
         if openai_api_key:
             ai_engine = AIEngine(
                 openai_api_key=openai_api_key,
                 vector_store=vector_store,
+                document_processor=document_processor,
                 model=os.getenv("OPENAI_MODEL", "gpt-4-turbo-preview")
             )
-            logger.info("✅ AI Engine initialized with OpenAI")
+            logger.info("AI Engine initialized with OpenAI")
         else:
             ai_engine = None
-            logger.warning("⚠️  OpenAI API key not set - AI query endpoint will not work")
+            logger.warning("OpenAI API key not set - AI query endpoint will not work")
             logger.warning("   Data collection and storage will still work")
         
         logger.info("AI Organization Assistant started successfully")
@@ -377,12 +390,12 @@ async def run_data_sync(sources: List[str], repositories: Optional[List[str]], s
             
             # DEBUG: Show what was collected
             print(f"\n{'='*80}")
-            print(f"📊 COLLECTION SUMMARY")
+            print(f"COLLECTION SUMMARY")
             print(f"{'='*80}")
-            print(f"✅ Total documents collected: {len(all_documents)}")
+            print(f"Total documents collected: {len(all_documents)}")
             
             # Show sample documents
-            print(f"\n📄 Sample Documents (first 5):")
+            print(f"\nSample Documents (first 5):")
             print(f"{'-'*80}")
             for i, doc in enumerate(all_documents[:5]):
                 print(f"\n{i+1}. Source: {doc.source}")
@@ -398,21 +411,24 @@ async def run_data_sync(sources: List[str], repositories: Optional[List[str]], s
             for doc in all_documents:
                 doc_types[doc.doc_type] = doc_types.get(doc.doc_type, 0) + 1
             
-            print(f"\n📋 Document types:")
+            print(f"\nDocument types:")
             for doc_type, count in sorted(doc_types.items(), key=lambda x: x[1], reverse=True):
                 print(f"   {doc_type}: {count} documents")
             print(f"{'='*80}\n")
             
-            # COMMENTED OUT: Embedding and storage (to save time/cost during testing)
-            # Uncomment the line below when ready to process and store:
-            # result = await pipeline.process_and_store_documents(all_documents)
+            # Process and store with AWS Bedrock embeddings (or local if disabled)
+            print(f"\n{'='*80}")
+            print(f"PROCESSING DOCUMENTS WITH EMBEDDINGS")
+            print(f"{'='*80}")
+            result = await pipeline.process_and_store_documents(all_documents)
             
-            # Fake result for status tracking (since we're not actually processing)
-            result = {
-                'processed_documents': len(all_documents),
-                'total_chunks': 0,  # No chunks created (not processing)
-                'errors': 0
-            }
+            print(f"\n{'='*80}")
+            print(f"PROCESSING COMPLETE!")
+            print(f"{'='*80}")
+            print(f"   Processed: {result['processed_documents']} documents")
+            print(f"   Total chunks: {result['total_chunks']}")
+            print(f"   Errors: {result['errors']}")
+            print(f"{'='*80}\n")
             
             sync_status.update({
                 "status": "completed",
@@ -420,7 +436,7 @@ async def run_data_sync(sources: List[str], repositories: Optional[List[str]], s
                 "total_chunks": result["total_chunks"], 
                 "errors": result["errors"],
                 "completed_at": datetime.now().isoformat(),
-                "message": f"Data collection completed. Collected {result['processed_documents']} documents. (Processing/embedding DISABLED for testing)"
+                "message": f"Successfully processed {result['processed_documents']} documents into {result['total_chunks']} chunks with embeddings"
             })
         else:
             sync_status.update({
