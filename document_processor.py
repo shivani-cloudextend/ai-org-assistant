@@ -10,13 +10,22 @@ from dataclasses import dataclass, asdict
 import hashlib
 import json
 from datetime import datetime
+import os
 
 # Third-party imports
 import chromadb
 from sentence_transformers import SentenceTransformer
-from langchain.text_splitter import RecursiveCharacterTextSplitter, Language
-from langchain.docstore.document import Document as LangchainDocument
+from langchain_text_splitters import RecursiveCharacterTextSplitter, Language
+from langchain_core.documents import Document as LangchainDocument
 import tiktoken
+
+# AWS imports (optional - only if using Bedrock)
+try:
+    import boto3
+    AWS_AVAILABLE = True
+except ImportError:
+    AWS_AVAILABLE = False
+    logger.warning("boto3 not installed - AWS Bedrock will not be available")
 
 from data_collectors import Document
 
@@ -41,12 +50,32 @@ class DocumentProcessor:
     def __init__(self, 
                  embedding_model: str = "BAAI/bge-large-en-v1.5",
                  chunk_size: int = 1000,
-                 chunk_overlap: int = 200):
+                 chunk_overlap: int = 200,
+                 use_aws_bedrock: bool = False,
+                 aws_region: str = "us-east-1"):
         
         self.embedding_model_name = embedding_model
-        self.embedder = SentenceTransformer(embedding_model)
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+        self.use_aws_bedrock = use_aws_bedrock
+        self.aws_region = aws_region
+        
+        # Initialize embedder based on configuration
+        if use_aws_bedrock:
+            if not AWS_AVAILABLE:
+                raise ImportError("boto3 is required for AWS Bedrock. Install with: pip install boto3")
+            
+            self.bedrock_runtime = boto3.client(
+                service_name='bedrock-runtime',
+                region_name=aws_region
+            )
+            self.bedrock_model_id = "amazon.titan-embed-text-v1"
+            self.embedder = None  # Not using local embedder
+            print(f"🌐 Initialized AWS Bedrock embeddings in region {aws_region}")
+        else:
+            self.embedder = SentenceTransformer(embedding_model)
+            self.bedrock_runtime = None
+            print(f"💻 Initialized local embeddings with {embedding_model}")
         
         # Initialize text splitters for different content types
         self.text_splitters = {
@@ -101,8 +130,9 @@ class DocumentProcessor:
                 return []
             
             # Generate embeddings for all chunks
-            logger.debug(f"Generating embeddings for {len(chunks)} chunks from {doc_id}")
-            embeddings = self.embedder.encode(chunks, convert_to_tensor=False)
+            print(f"🔄 Generating embeddings for {len(chunks)} chunks from {doc_id}")
+            embeddings = await self._generate_embeddings(chunks)
+            print(f"✅ Generated {len(embeddings)} embeddings")
             
             # Create processed chunks
             processed_chunks = []
@@ -158,6 +188,66 @@ class DocumentProcessor:
         except Exception as e:
             logger.error(f"Error processing document: {e}")
             return []
+    
+    async def _generate_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings using either AWS Bedrock or local model"""
+        if self.use_aws_bedrock:
+            print(f"🌐 Using AWS Bedrock to generate {len(texts)} embeddings")
+            return await self._generate_bedrock_embeddings(texts)
+        else:
+            print(f"💻 Using local model to generate {len(texts)} embeddings")
+            return self._generate_local_embeddings(texts)
+    
+    def _generate_local_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings using local SentenceTransformer model"""
+        embeddings = self.embedder.encode(texts, convert_to_tensor=False)
+        return [emb.tolist() if hasattr(emb, 'tolist') else emb for emb in embeddings]
+    
+    async def _generate_bedrock_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings using AWS Bedrock"""
+        embeddings = []
+        print(f"📡 Calling AWS Bedrock API for {len(texts)} texts...")
+        
+        for idx, text in enumerate(texts):
+            try:
+                # Prepare request for Bedrock
+                request_body = json.dumps({"inputText": text})
+                
+                logger.debug(f"   Bedrock request {idx+1}/{len(texts)} - text length: {len(text)}")
+                
+                # Call Bedrock API synchronously (boto3 doesn't support async natively)
+                response = await asyncio.to_thread(
+                    self.bedrock_runtime.invoke_model,
+                    modelId=self.bedrock_model_id,
+                    body=request_body,
+                    contentType='application/json',
+                    accept='application/json'
+                )
+                
+                # Parse response
+                response_body = json.loads(response['body'].read())
+                embedding = response_body.get('embedding', [])
+                embeddings.append(embedding)
+                
+                if (idx + 1) % 10 == 0 or (idx + 1) == len(texts):
+                    msg = f"   ✓ Processed {idx+1}/{len(texts)} embeddings via Bedrock"
+                    logger.info(msg)
+                    print(msg)
+                
+            except Exception as e:
+                error_msg = f"❌ Error generating Bedrock embedding for text {idx+1}: {e}"
+                logger.error(error_msg)
+                print(error_msg)
+                # Return a zero vector as fallback
+                embeddings.append([0.0] * 1536)  # Titan embed dimension
+        
+        print(f"✅ Completed {len(embeddings)} Bedrock embeddings")
+        return embeddings
+    
+    async def generate_embedding(self, text: str) -> List[float]:
+        """Generate a single embedding (used for queries)"""
+        embeddings = await self._generate_embeddings([text])
+        return embeddings[0]
     
     def generate_document_id(self, document: Document) -> str:
         """Generate a unique, deterministic ID for a document"""
@@ -400,7 +490,8 @@ class VectorStore:
                            query: str, 
                            user_role: str = 'general',
                            n_results: int = 10,
-                           filters: Optional[Dict] = None) -> List[Dict]:
+                           filters: Optional[Dict] = None,
+                           processor: Optional[DocumentProcessor] = None) -> List[Dict]:
         """Search for similar chunks based on query and user role"""
         
         # Determine which collections to search
@@ -412,12 +503,16 @@ class VectorStore:
         
         for collection_name in collections_to_search:
             try:
-                # Use the same embedding model to encode the query
-                processor = DocumentProcessor()  # This should be passed in or made singleton
-                query_embedding = processor.embedder.encode([query])
+                # Generate query embedding using provided processor or create new one
+                if processor:
+                    query_embedding = await processor.generate_embedding(query)
+                else:
+                    # Fallback to local embeddings
+                    temp_processor = DocumentProcessor()
+                    query_embedding = temp_processor.embedder.encode([query])[0].tolist()
                 
                 results = self.collections[collection_name].query(
-                    query_embeddings=query_embedding.tolist(),
+                    query_embeddings=[query_embedding],
                     n_results=n_results,
                     include=['documents', 'metadatas', 'distances'],
                     where=filters

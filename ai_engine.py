@@ -15,7 +15,7 @@ from datetime import datetime
 from openai import AsyncOpenAI
 from sentence_transformers import SentenceTransformer
 
-from document_processor import VectorStore
+from document_processor import VectorStore, DocumentProcessor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -226,10 +226,12 @@ class AIEngine:
     def __init__(self, 
                  openai_api_key: str,
                  vector_store: VectorStore,
+                 document_processor: DocumentProcessor,
                  model: str = "gpt-4-turbo-preview"):
         
         self.client = AsyncOpenAI(api_key=openai_api_key)
         self.vector_store = vector_store
+        self.document_processor = document_processor
         self.model = model
         self.prompt_builder = RoleBasedPromptBuilder()
         self.embedder = SentenceTransformer('BAAI/bge-large-en-v1.5')
@@ -299,7 +301,8 @@ class AIEngine:
             query=query_context.query,
             user_role=query_context.user_role.value,
             n_results=15,  # Get more results for better selection
-            filters=query_context.filters
+            filters=query_context.filters,
+            processor=self.document_processor
         )
         
         # Filter and re-rank results based on role relevance
