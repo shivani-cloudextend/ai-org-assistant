@@ -98,12 +98,53 @@ async def startup_event():
     
     try:
         # Load configuration from environment
-        openai_api_key = os.getenv("OPENAI_API_KEY")
+        vector_db_type = os.getenv("VECTOR_DB_TYPE", "chroma").lower()
         use_aws_bedrock = os.getenv("USE_AWS_BEDROCK", "false").lower() == "true"
         aws_region = os.getenv("AWS_REGION", "us-east-1")
         
-        # Initialize components (vector store and processor always needed)
-        vector_store = VectorStore(persist_directory=os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db"))
+        # Initialize VectorStore based on type
+        if vector_db_type == "opensearch":
+            logger.info("🔄 Initializing AWS OpenSearch Serverless vector store...")
+            
+            from aws_vector_store import OpenSearchVectorStore
+            
+            opensearch_endpoint = os.getenv("AWS_OPENSEARCH_ENDPOINT")
+            opensearch_region = os.getenv("AWS_OPENSEARCH_REGION", "us-east-1")
+            index_prefix = os.getenv("AWS_OPENSEARCH_INDEX_PREFIX", "ai-org-assistant")
+            
+            if not opensearch_endpoint:
+                raise ValueError("AWS_OPENSEARCH_ENDPOINT must be set when VECTOR_DB_TYPE=opensearch")
+            
+            # Determine embedding dimension based on model
+            embedding_dimension = 1024  # Default: BGE-Large
+            if use_aws_bedrock:
+                embed_model = os.getenv("BEDROCK_EMBED_MODEL", "amazon.titan-embed-text-v1")
+                if "titan-embed-text-v1" in embed_model or "titan-embed-v1" in embed_model:
+                    embedding_dimension = 1536  # Titan v1
+                elif "titan-embed-text-v2" in embed_model:
+                    embedding_dimension = 1024  # Titan v2 default
+            
+            vector_store = OpenSearchVectorStore(
+                endpoint=opensearch_endpoint,
+                region=opensearch_region,
+                index_prefix=index_prefix,
+                embedding_dimension=embedding_dimension
+            )
+            
+            logger.info(f"✅ AWS OpenSearch vector store initialized")
+            logger.info(f"   Endpoint: {opensearch_endpoint}")
+            logger.info(f"   Region: {opensearch_region}")
+            logger.info(f"   Embedding dimension: {embedding_dimension}")
+            
+        else:
+            # Use ChromaDB (existing implementation)
+            logger.info("🔄 Initializing ChromaDB vector store...")
+            
+            vector_store = VectorStore(
+                persist_directory=os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db")
+            )
+            
+            logger.info(f"✅ ChromaDB vector store initialized")
         
         # Initialize DocumentProcessor with AWS Bedrock or local embeddings
         document_processor = DocumentProcessor(
@@ -112,24 +153,25 @@ async def startup_event():
         )
         
         if use_aws_bedrock:
-            logger.info(f"Vector store initialized with AWS Bedrock embeddings (region: {aws_region})")
+            logger.info(f"✅ Using AWS Bedrock embeddings (region: {aws_region})")
         else:
-            logger.info("Vector store initialized with local embeddings")
-        logger.info("Document processor initialized")
+            logger.info("✅ Using local embeddings (BGE-Large)")
         
-        # Initialize AI engine with AWS Bedrock
+        # Initialize AI engine
         ai_engine = AIEngine(
             vector_store=vector_store,
             document_processor=document_processor,
             aws_region=aws_region,
-            model=os.getenv("BEDROCK_MODEL", "amazon.titan-text-express-v1")
+            model=os.getenv("BEDROCK_MODEL", "anthropic.claude-3-haiku-20240307-v1:0")
         )
-        logger.info("AI Engine initialized with AWS Bedrock")
+        logger.info("✅ AI Engine initialized")
         
-        logger.info("AI Organization Assistant started successfully")
+        logger.info("🚀 AI Organization Assistant started successfully")
+        logger.info(f"   Vector DB: {vector_db_type}")
+        logger.info(f"   Embeddings: {'AWS Bedrock' if use_aws_bedrock else 'Local'}")
         
     except Exception as e:
-        logger.error(f"Failed to start application: {e}")
+        logger.error(f"❌ Failed to start application: {e}")
         raise
 
 @app.get("/", response_model=HealthResponse)

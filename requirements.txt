@@ -1,14 +1,20 @@
-fastapi==0.104.1
-uvicorn==0.24.0
-pydantic==2.5.0
-chromadb==0.4.18
-langchain==0.1.0
+fastapi>=0.104.1
+uvicorn>=0.24.0
+pydantic>=2.5.0
+chromadb>=0.4.18
+langchain>=0.1.0
 sentence-transformers>=2.7.0
 openai>=1.6.1
-python-dotenv==1.0.0
-httpx==0.25.2
-atlassian-python-api==3.41.0
-PyGithub==1.59.1
-tiktoken==0.5.2
-python-multipart==0.0.6
+python-dotenv>=1.0.0
+httpx>=0.25.2
+atlassian-python-api>=3.41.0
+PyGithub>=1.59.1
+tiktoken>=0.5.2
+python-multipart>=0.0.6
+
+# AWS OpenSearch Serverless (for vector database migration)
+opensearch-py>=2.4.0
+requests-aws4auth>=1.2.3
+boto3>=1.34.0
+botocore>=1.34.0
 

@@ -15,7 +15,7 @@ import os
 # Third-party imports
 import chromadb
 from sentence_transformers import SentenceTransformer
-from langchain.text_splitter import RecursiveCharacterTextSplitter, Language
+from langchain_text_splitters import RecursiveCharacterTextSplitter, Language
 from langchain_core.documents import Document as LangchainDocument
 import tiktoken
 

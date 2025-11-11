@@ -256,6 +256,7 @@ class AIEngine:
         """Process a user query and generate role-based response"""
         
         start_time = datetime.now()
+        retrieved_docs = []  # Initialize to preserve in exception handler
         
         try:
             # Step 1: Retrieve relevant documents
@@ -298,13 +299,28 @@ class AIEngine:
             
         except Exception as e:
             logger.error(f"Error processing query: {e}")
+            
+            # If we have retrieved docs, include them even on error
+            formatted_sources = self._format_sources(retrieved_docs) if retrieved_docs else []
+            confidence = self._calculate_confidence(retrieved_docs, query_context.query) if retrieved_docs else 0.0
+            
+            # Create a helpful fallback response with sources
+            if retrieved_docs:
+                # Build a simple context-based answer from sources
+                context_summary = self._build_simple_summary(retrieved_docs)
+                answer = f"I found {len(retrieved_docs)} relevant documents but encountered an error generating a detailed response: {str(e)}\n\nHere's what I found:\n\n{context_summary}\n\nPlease check the sources below for more details."
+                notes = [f"Found {len(retrieved_docs)} relevant documents", "AI generation failed - showing raw sources"]
+            else:
+                answer = f"I encountered an error while processing your question: {str(e)}. Please try again or rephrase your question."
+                notes = ["Error occurred during processing"]
+            
             return AIResponse(
-                answer=f"I encountered an error while processing your question: {str(e)}. Please try again or rephrase your question.",
-                sources=[],
-                confidence_score=0.0,
+                answer=answer,
+                sources=formatted_sources,
+                confidence_score=confidence,
                 processing_time=(datetime.now() - start_time).total_seconds(),
-                role_specific_notes=["Error occurred during processing"],
-                suggested_actions=["Try rephrasing your question", "Contact system administrator if error persists"]
+                role_specific_notes=notes,
+                suggested_actions=["Review the source documents below", "Try rephrasing your question", "Contact system administrator if error persists"]
             )
 
     async def _retrieve_relevant_docs(self, query_context: QueryContext) -> List[Dict]:
@@ -539,6 +555,26 @@ class AIEngine:
             sources.append(source)
         
         return sources
+    
+    def _build_simple_summary(self, retrieved_docs: List[Dict]) -> str:
+        """Build a simple summary from retrieved documents when AI generation fails"""
+        
+        summary_parts = []
+        
+        for i, doc in enumerate(retrieved_docs[:3], 1):  # Show top 3
+            metadata = doc.get('metadata', {})
+            content = doc.get('content', '')[:200]  # First 200 chars
+            
+            title = metadata.get('file_path') or metadata.get('title', 'Unknown')
+            doc_type = metadata.get('doc_type', 'document')
+            similarity = 1 - doc.get('distance', 1)
+            
+            summary_parts.append(
+                f"{i}. **{title}** ({doc_type}, {similarity:.1%} match)\n"
+                f"   {content}..."
+            )
+        
+        return "\n\n".join(summary_parts)
 
 # Example usage and testing
 async def main():
