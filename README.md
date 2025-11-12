@@ -47,9 +47,13 @@ An intelligent assistant that reads and processes your organization's GitHub rep
 ## Tech Stack
 
 - **Backend**: Python/FastAPI
-- **Vector Database**: ChromaDB
-- **Embeddings**: AWS Bedrock (Titan), OpenAI, or Sentence-Transformers
-- **LLM**: OpenAI GPT-4 or local models
+- **Vector Database**: 
+  - **Production**: AWS OpenSearch Serverless (recommended)
+  - **Development**: ChromaDB (local)
+- **Embeddings**: 
+  - AWS Bedrock Titan (1536d)
+  - Sentence-Transformers BAAI/bge-large-en-v1.5 (1024d)
+- **LLM**: AWS Bedrock (Claude 3 Haiku/Sonnet, Titan)
 - **Data Processing**: Langchain
 - **Frontend**: React (optional)
 
@@ -116,3 +120,57 @@ curl -X POST "http://localhost:8000/query" \
 - Returns: Troubleshooting steps, common issues, monitoring guides
 
 Command for killing the server process -> lsof -ti:8000 | xargs kill -9
+
+## 🚀 AWS Vector Database Migration
+
+This project supports both local ChromaDB and AWS OpenSearch Serverless for vector storage.
+
+### Quick Migration to AWS OpenSearch
+
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Configure AWS credentials
+aws configure
+
+# 3. Run automated setup
+python setup_aws_opensearch.py
+
+# 4. Update .env
+VECTOR_DB_TYPE=opensearch
+
+# 5. Test connection
+python test_opensearch_integration.py
+
+# 6. Start application
+python main.py
+
+# 7. Sync your data
+curl -X POST "http://localhost:8000/sync" \
+  -H "Content-Type: application/json" \
+  -d '{"sources": ["github", "confluence"]}'
+```
+
+### Documentation
+
+- **📖 Quick Start**: [AWS_QUICK_START.md](./AWS_QUICK_START.md) - 10-minute setup guide
+- **📚 Complete Guide**: [AWS_VECTOR_DB_MIGRATION_GUIDE.md](./AWS_VECTOR_DB_MIGRATION_GUIDE.md) - Comprehensive migration documentation
+- **🎯 Summary**: [MIGRATION_SUMMARY.md](./MIGRATION_SUMMARY.md) - Executive overview
+- **🏗️ Architecture**: [MIGRATION_ARCHITECTURE.md](./MIGRATION_ARCHITECTURE.md) - Visual diagrams and flows
+
+### Key Benefits
+
+- ✅ **Scalable**: Handle millions of documents
+- ✅ **High Availability**: Multi-AZ deployment
+- ✅ **Managed**: Zero infrastructure maintenance
+- ✅ **Monitored**: CloudWatch integration
+- ✅ **Secure**: IAM, encryption, audit logs
+
+### Cost Estimate
+
+- **Small deployment** (~10K docs): ~$350/month
+- **Medium deployment** (~100K docs): ~$700/month
+- Includes auto-scaling, backups, monitoring
+
+See [AWS_VECTOR_DB_MIGRATION_GUIDE.md](./AWS_VECTOR_DB_MIGRATION_GUIDE.md) for detailed cost analysis.
