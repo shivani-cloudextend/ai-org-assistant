@@ -236,7 +236,7 @@ class AIEngine:
                  vector_store: VectorStore,
                  document_processor: DocumentProcessor,
                  aws_region: str = "us-east-1",
-                 model: str = "anthropic.claude-3-haiku-20240307-v1:0"):
+                 model: str = "amazon.titan-text-express-v1"):
         
         # Use AWS Bedrock instead of OpenAI
         self.bedrock_runtime = boto3.client(
